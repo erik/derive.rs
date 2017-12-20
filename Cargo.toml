@@ -1,0 +1,6 @@
+[package]
+name = "derivers"
+version = "0.1.0"
+authors = ["Erik Price <github@erikprice.net>"]
+
+[dependencies]
