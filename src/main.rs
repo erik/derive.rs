@@ -3,7 +3,7 @@ extern crate serde_derive;
 extern crate docopt;
 extern crate image;
 extern crate gpx;
-extern crate quick_xml;
+extern crate time;
 
 use std::fs;
 use std::fs::File;
@@ -12,7 +12,7 @@ use std::path;
 
 use docopt::Docopt;
 use gpx::read;
-use gpx::Gpx;
+use gpx::{Gpx, Track};
 use image::ImageBuffer;
 
 
@@ -32,10 +32,50 @@ struct CommandArgs {
     arg_right_lng: f64,
     arg_width: u32,
     arg_height: u32,
-    arg_directory: String
+    arg_directory: String,
 }
 
-fn parse_gpx(path: &path::Path) -> () {
+#[derive(Debug)]
+struct Activity {
+    name: String,
+    date: time::Tm,
+    track_points: Vec<(f64, f64)>,
+}
+
+fn parse_gpx(path: &path::Path) -> Option<Activity> {
+    let file = File::open(path).unwrap();
+    let reader = BufReader::new(file);
+
+    let gpx: Gpx = read(reader).unwrap();
+
+    // Nothing to do if there are no tracks
+    if gpx.tracks.len() == 0 {
+        return None;
+    } else if gpx.tracks.len() > 1 {
+        println!("Warning! more than 1 track, just taking first");
+    }
+
+    let track: &Track = &gpx.tracks[0];
+
+    let mut activity = Activity {
+        name: String::from("unnamed"),
+        date: time::empty_tm(),
+        track_points: vec![],
+    };
+
+    if let Some(ref name) = track.name {
+        activity.name = name.clone();
+    }
+
+    if let Some(metadata) = gpx.metadata {
+
+        if let Some(_time) = metadata.time {
+            // FIXME: update this
+            activity.date = time::now();
+        }
+    }
+
+    Some(activity)
 }
 
 
@@ -46,14 +86,13 @@ fn main() {
 
     println!("{:?}", args);
 
-    let paths = fs::read_dir(args.arg_directory).unwrap();
-    for path in paths {
-        let file_name = path.unwrap().path();
-        let file = File::open(file_name.clone()).unwrap();
-        let reader = BufReader::new(file);
+    let dir_entry = fs::read_dir(args.arg_directory).unwrap();
+    let files: Vec<path::PathBuf> = dir_entry.map(|p| p.unwrap().path()).collect();
 
-        let gpx: Gpx = read(reader).unwrap();
+    for path in files {
+        println!("Reading GPX file: {:?}", path);
 
-        println!("Reading GPX file: {:?}", file_name.display());
+        let activity = parse_gpx(path.as_path());
+        println!("Activity: {:?}", activity);
     }
 }
