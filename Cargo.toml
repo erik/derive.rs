@@ -4,3 +4,15 @@ version = "0.1.0"
 authors = ["Erik Price <github@erikprice.net>"]
 
 [dependencies]
+serde = "1.0.24"
+serde_derive = "1.0.24"
+docopt = "0.8.1"
+image = "0.18.0"
+imageproc = "*"
+rusttype = "*"
+gpx = "*"
+quick-xml = "0.10.1"
+
+[replace]
+# FIXME: remove this hack
+"gpx:0.0.1" = { git = 'https://github.com/georust/rust-gpx', branch = 'master' }
