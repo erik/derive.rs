@@ -11,7 +11,9 @@ image = "0.18.0"
 imageproc = "*"
 rusttype = "*"
 gpx = "*"
-quick-xml = "0.10.1"
+# TODO: Eventually, this is much faster than the xml-rs code gpx uses
+# quick-xml = "0.10.1"
+time = "*"
 
 [replace]
 # FIXME: remove this hack
