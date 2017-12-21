@@ -5,6 +5,7 @@ extern crate image;
 extern crate gpx;
 extern crate geo;
 extern crate time;
+extern crate rayon;
 
 use std::fs;
 use std::fs::File;
@@ -16,6 +17,7 @@ use gpx::read;
 use gpx::{Gpx, Track};
 use geo::Point;
 use image::ImageBuffer;
+use rayon::prelude::*;
 
 
 const USAGE: &'static str = "
@@ -92,11 +94,15 @@ fn main() {
 
     println!("{:?}", args);
 
-    let dir_entry = fs::read_dir(args.arg_directory).unwrap();
-    let files: Vec<path::PathBuf> = dir_entry.map(|p| p.unwrap().path()).collect();
+    let activities: Vec<Activity> = fs::read_dir(args.arg_directory)
+        .unwrap()
+        .map(|p| p.unwrap().path().clone())
+        .collect::<Vec<path::PathBuf>>()
+        .into_par_iter()
+        .filter_map(|p| parse_gpx(p.as_path()))
+        .collect();
 
-    for path in files {
-        let activity = parse_gpx(path.as_path());
-        println!("Activity: {:?}", activity.unwrap().name);
+    for act in activities {
+        println!("Activity: {:?}", act.name);
     }
 }
