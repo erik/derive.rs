@@ -52,8 +52,7 @@ impl ImageFrame {
     pub fn from(args: &CommandArgs) -> ImageFrame {
         // h == w * (top - bottom) / (right - left)
         let height = (args.arg_width as f64) *
-            ((args.arg_top_lat - args.arg_bottom_lat) /
-             (args.arg_right_lng - args.arg_left_lng));
+            ((args.arg_top_lat - args.arg_bottom_lat) / (args.arg_right_lng - args.arg_left_lng));
 
         println!("Computed height: {:?}", height);
 
@@ -61,12 +60,12 @@ impl ImageFrame {
             top_left: Point::new(args.arg_left_lng, args.arg_top_lat),
             bottom_right: Point::new(args.arg_right_lng, args.arg_bottom_lat),
             width: args.arg_width,
-            height: args.arg_height,
+            height: height as u32,
         }
     }
 
     pub fn get_image(&self) -> image::DynamicImage {
-        let buf = ImageBuffer::from_pixel(self.width, self.height, image::Rgb([0, 0, 0]));
+        let buf = ImageBuffer::from_pixel(self.width, self.height, image::Rgb([255, 255, 255]));
 
         image::ImageRgb8(buf)
     }
@@ -80,11 +79,12 @@ impl ImageFrame {
         let x_offset = x_pos / (self.top_left.lng() - self.bottom_right.lng());
         let y_offset = y_pos / (self.top_left.lat() - self.bottom_right.lat());
 
-        let (x, y) = ((x_offset * self.width as f64),
-                      (y_offset * self.height as f64));
+        let (x, y) = (
+            (x_offset * self.width as f64),
+            (y_offset * self.height as f64),
+        );
 
-        if (x < 0.0 || x as u32 >= self.width) ||
-            (y < 0.0 || y as u32 >= self.height) {
+        if (x < 0.0 || x as u32 >= self.width) || (y < 0.0 || y as u32 >= self.height) {
             None
         } else {
             Some((x as u32, y as u32))
@@ -157,12 +157,15 @@ fn main() {
         .map(|p| p.unwrap().path())
         .collect();
 
-    let activities: Vec<Activity> = paths
+    let mut activities: Vec<Activity> = paths
         .into_par_iter()
         .filter_map(|ref p| parse_gpx(p))
         .collect();
 
+    activities.sort_by_key_unstable(|a| a.date);
+
     let fout = &mut File::create("heatmap.ppm").unwrap();
+    let mut counter = 0;
 
     for act in activities {
         println!("Activity: {:?}", act.name);
@@ -173,19 +176,26 @@ fn main() {
             .collect();
 
         for (x, y) in pixels.into_iter() {
-            let pixel = image.as_mut_rgb8().unwrap().get_pixel_mut(x, y);
+            {
+                let pixel = image.as_mut_rgb8().unwrap().get_pixel_mut(x, y);
 
-            let c = if pixel[0] == 255 {
-                pixel[0]
-            } else if pixel[0] == 0 {
-                25
-            } else {
-                pixel[0] + 5
-            };
+                let c = if pixel[0] == 0 {
+                    pixel[0]
+                } else if pixel[0] == 255 {
+                    pixel[0] - 25
+                } else {
+                    pixel[0] - 5
+                };
 
-            *pixel = image::Rgb([c, c, c]);
+                *pixel = image::Rgb([c, c, c]);
+                counter += 1;
+            }
+
+            if counter == 50 {
+                image.save(fout, image::PPM).unwrap();
+                counter = 0;
+            }
         }
 
-        image.save(fout, image::PPM).unwrap();
     }
 }
