@@ -44,12 +44,12 @@ struct CommandArgs {
 struct ImageFrame {
     top_left: Point<f64>,
     bottom_right: Point<f64>,
-    buf: image::RgbImage
+    width: u32,
+    height: u32,
 }
 
 impl ImageFrame {
     pub fn from(args: &CommandArgs) -> ImageFrame {
-
         // h == w * (top - bottom) / (right - left)
         let height = (args.arg_width as f64) *
             ((args.arg_top_lat - args.arg_bottom_lat) /
@@ -60,9 +60,15 @@ impl ImageFrame {
         ImageFrame {
             top_left: Point::new(args.arg_left_lng, args.arg_top_lat),
             bottom_right: Point::new(args.arg_right_lng, args.arg_bottom_lat),
-            buf: ImageBuffer::from_pixel(args.arg_width, height as u32,
-                                         image::Rgb([0, 0, 0]))
+            width: args.arg_width,
+            height: args.arg_height,
         }
+    }
+
+    pub fn get_image(&self) -> image::DynamicImage {
+        let buf = ImageBuffer::from_pixel(self.width, self.height, image::Rgb([0, 0, 0]));
+
+        image::ImageRgb8(buf)
     }
 
     // Using simple equirectangular projection for now
@@ -74,11 +80,11 @@ impl ImageFrame {
         let x_offset = x_pos / (self.top_left.lng() - self.bottom_right.lng());
         let y_offset = y_pos / (self.top_left.lat() - self.bottom_right.lat());
 
-        let (x, y) = ((x_offset * self.buf.width() as f64),
-                      (y_offset * self.buf.height() as f64));
+        let (x, y) = ((x_offset * self.width as f64),
+                      (y_offset * self.height as f64));
 
-        if (x < 0.0 || x as u32 >= self.buf.width()) ||
-            (y < 0.0 || y as u32 >= self.buf.height()) {
+        if (x < 0.0 || x as u32 >= self.width) ||
+            (y < 0.0 || y as u32 >= self.height) {
             None
         } else {
             Some((x as u32, y as u32))
@@ -142,7 +148,8 @@ fn main() {
 
     println!("{:?}", args);
 
-    let mut img = ImageFrame::from(&args);
+    let frame = ImageFrame::from(&args);
+    let mut image = frame.get_image();
 
     let paths: Vec<path::PathBuf> = fs::read_dir(args.arg_directory)
         .unwrap()
@@ -156,27 +163,29 @@ fn main() {
         .collect();
 
     let fout = &mut File::create("heatmap.ppm").unwrap();
-    let cloned_buf = img.buf.clone();
-    let dyn_image = image::ImageRgb8(img.buf.clone());
 
     for act in activities {
         println!("Activity: {:?}", act.name);
 
-        for pt in act.track_points.iter() {
-            if let Some((x, y)) = img.project_to_screen(pt) {
-                let pixel = img.buf.get_pixel_mut(x, y);
-                let c = if pixel[0] == 255 {
-                    pixel[0]
-                } else if pixel[0] == 0{
-                    25
-                } else {
-                    pixel[0] + 5
-                };
+        let pixels: Vec<(u32, u32)> = act.track_points
+            .par_iter()
+            .filter_map(|ref pt| frame.project_to_screen(pt))
+            .collect();
 
-                *pixel = image::Rgb([c, c, c]);
-            }
+        for (x, y) in pixels.into_iter() {
+            let pixel = image.as_mut_rgb8().unwrap().get_pixel_mut(x, y);
+
+            let c = if pixel[0] == 255 {
+                pixel[0]
+            } else if pixel[0] == 0 {
+                25
+            } else {
+                pixel[0] + 5
+            };
+
+            *pixel = image::Rgb([c, c, c]);
         }
 
-        image::ImageRgb8(img.buf.clone()).save(fout, image::PPM).unwrap();
+        image.save(fout, image::PPM).unwrap();
     }
 }
