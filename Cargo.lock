@@ -164,7 +164,8 @@ name = "derivers"
 version = "0.1.0"
 dependencies = [
  "docopt 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "gpx 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "geo 0.4.13 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gpx 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "image 0.18.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "imageproc 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rusttype 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -209,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "error-chain"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "backtrace 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -260,21 +261,15 @@ dependencies = [
 
 [[package]]
 name = "gpx"
-version = "0.0.1"
-source = "git+https://github.com/georust/rust-gpx#41fc2efe4f035a0f8384808d0ae5acee9d9896fd"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "assert_approx_eq 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "chrono 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "error-chain 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "error-chain 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "geo 0.4.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "xml-rs 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
-
-[[package]]
-name = "gpx"
-version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-replace = "gpx 0.0.1 (git+https://github.com/georust/rust-gpx)"
 
 [[package]]
 name = "image"
@@ -812,14 +807,13 @@ dependencies = [
 "checksum either 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "740178ddf48b1a9e878e6d6509a1442a2d42fd2928aae8e7a6f8a36fb01981b3"
 "checksum enum_primitive 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "be4551092f4d519593039259a9ed8daedf0da12e5109c5280338073eaeb81180"
 "checksum env_logger 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)" = "15abd780e45b3ea4f76b4e9a26ff4843258dd8a3eed2775a0e7368c2e7936c2f"
-"checksum error-chain 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)" = "d9435d864e017c3c6afeac1654189b06cdb491cf2ff73dbf0d73b0f292f42ff8"
+"checksum error-chain 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)" = "ff511d5dc435d703f4971bc399647c9bc38e20cb41452e3b9feb4765419ed3f3"
 "checksum fuchsia-zircon 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "f6c0581a4e363262e52b87f59ee2afe3415361c6ec35e665924eb08afe8ff159"
 "checksum fuchsia-zircon-sys 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "43f3795b4bae048dc6123a6b972cadde2e676f9ded08aef6bb77f5f157684a82"
 "checksum generic-array 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "3406a3975bc944fdd85b7964d53296a0ff11f4b6c4704fa4972c9a7c8ba27367"
 "checksum geo 0.4.13 (registry+https://github.com/rust-lang/crates.io-index)" = "03421e9865903f0015426358027cafe76d4a3858031adaa1a1f1be5e62cdbb82"
 "checksum gif 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)" = "e2e41945ba23db3bf51b24756d73d81acb4f28d85c3dccc32c6fae904438c25f"
-"checksum gpx 0.0.1 (git+https://github.com/georust/rust-gpx)" = "<none>"
-"checksum gpx 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "7eb5070ea23c13c29c440a0cce716d400f5a29081dcd461064c42c22338c4b7c"
+"checksum gpx 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "e1eb6eefd881986d7e403ed1eb4cffc382b1326b18798fc05a16d9e055961383"
 "checksum image 0.18.0 (registry+https://github.com/rust-lang/crates.io-index)" = "545f000e8aa4e569e93f49c446987133452e0091c2494ac3efd3606aa3d309f2"
 "checksum imageproc 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)" = "fad5f3aee292bae32a91e11dc4a625a010c5689e5ef146478bd9ffc42f39dcbe"
 "checksum inflate 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)" = "10ec05638adf7c5c788bc0cfa608cd479a13572beda20feb4898fe1d85d2c64b"
