@@ -3,6 +3,7 @@ extern crate serde_derive;
 extern crate docopt;
 extern crate image;
 extern crate gpx;
+extern crate geo;
 extern crate time;
 
 use std::fs;
@@ -13,6 +14,7 @@ use std::path;
 use docopt::Docopt;
 use gpx::read;
 use gpx::{Gpx, Track};
+use geo::Point;
 use image::ImageBuffer;
 
 
@@ -39,7 +41,7 @@ struct CommandArgs {
 struct Activity {
     name: String,
     date: time::Tm,
-    track_points: Vec<(f64, f64)>,
+    track_points: Vec<Point<f64>>,
 }
 
 fn parse_gpx(path: &path::Path) -> Option<Activity> {
@@ -68,11 +70,15 @@ fn parse_gpx(path: &path::Path) -> Option<Activity> {
     }
 
     if let Some(metadata) = gpx.metadata {
-
         if let Some(_time) = metadata.time {
             // FIXME: update this
             activity.date = time::now();
         }
+    }
+
+    for seg in track.segments.iter() {
+        let points = seg.points.iter().map(|ref wpt| wpt.point());
+        activity.track_points.extend(points);
     }
 
     Some(activity)
@@ -90,9 +96,7 @@ fn main() {
     let files: Vec<path::PathBuf> = dir_entry.map(|p| p.unwrap().path()).collect();
 
     for path in files {
-        println!("Reading GPX file: {:?}", path);
-
         let activity = parse_gpx(path.as_path());
-        println!("Activity: {:?}", activity);
+        println!("Activity: {:?}", activity.unwrap().name);
     }
 }
