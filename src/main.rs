@@ -4,7 +4,7 @@ extern crate docopt;
 extern crate image;
 extern crate gpx;
 extern crate geo;
-extern crate time;
+extern crate chrono;
 extern crate rayon;
 
 use std::fs;
@@ -39,14 +39,62 @@ struct CommandArgs {
     arg_directory: String,
 }
 
+
+#[derive(Debug)]
+struct ImageFrame {
+    top_left: Point<f64>,
+    bottom_right: Point<f64>,
+    buf: image::RgbaImage
+}
+
+impl ImageFrame {
+    pub fn from(args: &CommandArgs) -> ImageFrame {
+
+        // h == w * (top - bottom) / (right - left)
+        let height = (args.arg_width as f64) *
+            ((args.arg_top_lat - args.arg_bottom_lat) /
+             (args.arg_right_lng - args.arg_left_lng));
+
+        println!("Computed height: {:?}", height);
+
+        ImageFrame {
+            top_left: Point::new(args.arg_left_lng, args.arg_top_lat),
+            bottom_right: Point::new(args.arg_right_lng, args.arg_bottom_lat),
+            buf: ImageBuffer::from_pixel(args.arg_width, height as u32,
+                                         image::Rgba([0, 0, 0, 255]))
+        }
+    }
+
+    // Using simple equirectangular projection for now
+    pub fn project_to_screen(&self, coord: &Point<f64>) -> Option<(u32, u32)> {
+        // lng is x pos
+        let x_pos = self.top_left.lng() - coord.lng();
+        let y_pos = self.top_left.lat() - coord.lat();
+
+        let x_offset = x_pos / (self.top_left.lng() - self.bottom_right.lng());
+        let y_offset = y_pos / (self.top_left.lat() - self.bottom_right.lat());
+
+        let (x, y) = ((x_offset * self.buf.width() as f64),
+                      (y_offset * self.buf.height() as f64));
+
+        if (x < 0.0 || x as u32 >= self.buf.width()) ||
+            (y < 0.0 || y as u32 >= self.buf.height()) {
+            None
+        } else {
+            Some((x as u32, y as u32))
+        }
+    }
+}
+
+
 #[derive(Debug)]
 struct Activity {
     name: String,
-    date: time::Tm,
+    date: chrono::DateTime<chrono::Utc>,
     track_points: Vec<Point<f64>>,
 }
 
-fn parse_gpx(path: &path::Path) -> Option<Activity> {
+fn parse_gpx(path: &path::PathBuf) -> Option<Activity> {
     let file = File::open(path).unwrap();
     let reader = BufReader::new(file);
 
@@ -62,28 +110,28 @@ fn parse_gpx(path: &path::Path) -> Option<Activity> {
     let track: &Track = &gpx.tracks[0];
 
     let mut activity = Activity {
-        name: String::from("unnamed"),
-        date: time::empty_tm(),
+        name: track.name.clone().unwrap_or(String::from("Untitled")),
+        date: chrono::Utc::now(),
         track_points: vec![],
     };
 
-    if let Some(ref name) = track.name {
-        activity.name = name.clone();
-    }
-
     if let Some(metadata) = gpx.metadata {
-        if let Some(_time) = metadata.time {
-            // FIXME: update this
-            activity.date = time::now();
+        if let Some(time) = metadata.time {
+            activity.date = time;
         }
     }
 
+    // Append all the waypoints.
     for seg in track.segments.iter() {
         let points = seg.points.iter().map(|ref wpt| wpt.point());
         activity.track_points.extend(points);
     }
 
-    Some(activity)
+    if activity.track_points.len() == 0 {
+        None
+    } else {
+        Some(activity)
+    }
 }
 
 
@@ -94,15 +142,38 @@ fn main() {
 
     println!("{:?}", args);
 
-    let activities: Vec<Activity> = fs::read_dir(args.arg_directory)
+    let mut img = ImageFrame::from(&args);
+
+    let paths: Vec<path::PathBuf> = fs::read_dir(args.arg_directory)
         .unwrap()
-        .map(|p| p.unwrap().path().clone())
-        .collect::<Vec<path::PathBuf>>()
+        .into_iter()
+        .map(|p| p.unwrap().path())
+        .collect();
+
+    let activities: Vec<Activity> = paths
         .into_par_iter()
-        .filter_map(|p| parse_gpx(p.as_path()))
+        .filter_map(|ref p| parse_gpx(p))
         .collect();
 
     for act in activities {
         println!("Activity: {:?}", act.name);
+
+        for pt in act.track_points.iter() {
+            if let Some((x, y)) = img.project_to_screen(pt) {
+                let pixel = img.buf.get_pixel_mut(x, y);
+                let c = if pixel[0] == 255 {
+                    pixel[0]
+                } else if pixel[0] == 0{
+                    25
+                } else {
+                    pixel[0] + 5
+                };
+
+                *pixel = image::Rgba([c, c, c, 255]);
+            }
+        }
     }
+
+    let fout = &mut File::create("heatmap.png").unwrap();
+    image::ImageRgba8(img.buf).save(fout, image::PNG).unwrap();
 }

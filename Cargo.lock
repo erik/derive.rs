@@ -163,6 +163,7 @@ dependencies = [
 name = "derivers"
 version = "0.1.0"
 dependencies = [
+ "chrono 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "docopt 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "geo 0.4.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "gpx 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -172,7 +173,6 @@ dependencies = [
  "rusttype 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.24 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.24 (registry+https://github.com/rust-lang/crates.io-index)",
- "time 0.1.38 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
