@@ -9,7 +9,7 @@ extern crate rayon;
 
 use std::fs;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Write};
 use std::path;
 
 use docopt::Docopt;
@@ -24,7 +24,9 @@ const USAGE: &'static str = "
 Generate video from GPX files.
 
 Usage:
-  derivers <top-lat> <left-lng> <bottom-lat> <right-lng> <width> <height> <directory>
+  derivers [options] <top-lat> <left-lng> <bottom-lat> <right-lng> <width> <height> <directory>
+
+Options:
 ";
 
 
@@ -40,38 +42,69 @@ struct CommandArgs {
 }
 
 
-#[derive(Debug)]
-struct ImageFrame {
+type ScreenPoint = (u32, u32);
+
+struct Heatmap {
     top_left: Point<f64>,
     bottom_right: Point<f64>,
     width: u32,
     height: u32,
+    heatmap: image::DynamicImage,
 }
 
-impl ImageFrame {
-    pub fn from(args: &CommandArgs) -> ImageFrame {
+impl Heatmap {
+    pub fn from(args: &CommandArgs) -> Heatmap {
         // h == w * (top - bottom) / (right - left)
-        let height = (args.arg_width as f64) *
-            ((args.arg_top_lat - args.arg_bottom_lat) / (args.arg_right_lng - args.arg_left_lng));
+        let ratio = (args.arg_top_lat - args.arg_bottom_lat) /
+            (args.arg_right_lng - args.arg_left_lng);
+
+        let width = args.arg_width as u32;
+        let height = ((args.arg_width as f64) * ratio) as u32;
 
         println!("Computed height: {:?}", height);
 
-        ImageFrame {
+        let buffer = ImageBuffer::from_pixel(width, height, image::Rgb([255, 255, 255]));
+        let heatmap = image::ImageRgb8(buffer);
+
+        Heatmap {
             top_left: Point::new(args.arg_left_lng, args.arg_top_lat),
             bottom_right: Point::new(args.arg_right_lng, args.arg_bottom_lat),
-            width: args.arg_width,
-            height: height as u32,
+            width: width,
+            height: height,
+            heatmap: heatmap,
         }
     }
 
-    pub fn get_image(&self) -> image::DynamicImage {
-        let buf = ImageBuffer::from_pixel(self.width, self.height, image::Rgb([255, 255, 255]));
-
-        image::ImageRgb8(buf)
+    pub fn save_frame<W: Write>(&self, writer: &mut W) {
+        self.heatmap.save(writer, image::PPM).unwrap();
     }
 
-    // Using simple equirectangular projection for now
-    pub fn project_to_screen(&self, coord: &Point<f64>) -> Option<(u32, u32)> {
+    #[inline]
+    pub fn add_point(&mut self, point: &ScreenPoint) {
+        let image = self.heatmap.as_mut_rgb8().unwrap();
+        let pixel = image.get_pixel_mut(point.0, point.1);
+
+        let c = if pixel[0] == 0 {
+            pixel[0]
+        } else {
+            pixel[0] - 15
+        };
+
+        *pixel = image::Rgb([c; 3]);
+    }
+
+    pub fn decay(&mut self, amount: u8) {
+        let image = self.heatmap.as_mut_rgb8().unwrap();
+        for (_x, _y, pixel) in image.enumerate_pixels_mut() {
+            if pixel[0] < 255 - amount {
+                *pixel = image::Rgb([pixel[0]; 3]);
+            }
+        }
+    }
+
+    // Using simple equirectangular projection for now. Returns None if point
+    // is off screen.
+    pub fn project_to_screen(&self, coord: &Point<f64>) -> Option<ScreenPoint> {
         // lng is x pos
         let x_pos = self.top_left.lng() - coord.lng();
         let y_pos = self.top_left.lat() - coord.lat();
@@ -148,8 +181,7 @@ fn main() {
 
     println!("{:?}", args);
 
-    let frame = ImageFrame::from(&args);
-    let mut image = frame.get_image();
+    let mut map = Heatmap::from(&args);
 
     let paths: Vec<path::PathBuf> = fs::read_dir(args.arg_directory)
         .unwrap()
@@ -162,7 +194,7 @@ fn main() {
         .filter_map(|ref p| parse_gpx(p))
         .collect();
 
-    activities.sort_by_key_unstable(|a| a.date);
+    activities.sort_by_key(|a| a.date);
 
     let fout = &mut File::create("heatmap.ppm").unwrap();
     let mut counter = 0;
@@ -170,32 +202,22 @@ fn main() {
     for act in activities {
         println!("Activity: {:?}", act.name);
 
-        let pixels: Vec<(u32, u32)> = act.track_points
-            .par_iter()
-            .filter_map(|ref pt| frame.project_to_screen(pt))
+        let pixels: Vec<ScreenPoint> = act.track_points
+            .into_iter()
+            .filter_map(|ref pt| map.project_to_screen(pt))
             .collect();
 
-        for (x, y) in pixels.into_iter() {
-            {
-                let pixel = image.as_mut_rgb8().unwrap().get_pixel_mut(x, y);
+        for ref point in pixels.into_iter() {
+            map.add_point(point);
+            counter += 1;
 
-                let c = if pixel[0] == 0 {
-                    pixel[0]
-                } else if pixel[0] == 255 {
-                    pixel[0] - 25
-                } else {
-                    pixel[0] - 5
-                };
-
-                *pixel = image::Rgb([c, c, c]);
-                counter += 1;
-            }
-
-            if counter == 50 {
-                image.save(fout, image::PPM).unwrap();
+            if counter == 150 {
+                map.save_frame(fout);
                 counter = 0;
             }
         }
 
+        // FIXME: this is pretty ugly.
+        // map.decay(1);
     }
 }
