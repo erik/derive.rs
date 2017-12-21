@@ -44,7 +44,7 @@ struct CommandArgs {
 struct ImageFrame {
     top_left: Point<f64>,
     bottom_right: Point<f64>,
-    buf: image::RgbaImage
+    buf: image::RgbImage
 }
 
 impl ImageFrame {
@@ -61,7 +61,7 @@ impl ImageFrame {
             top_left: Point::new(args.arg_left_lng, args.arg_top_lat),
             bottom_right: Point::new(args.arg_right_lng, args.arg_bottom_lat),
             buf: ImageBuffer::from_pixel(args.arg_width, height as u32,
-                                         image::Rgba([0, 0, 0, 255]))
+                                         image::Rgb([0, 0, 0]))
         }
     }
 
@@ -155,6 +155,10 @@ fn main() {
         .filter_map(|ref p| parse_gpx(p))
         .collect();
 
+    let fout = &mut File::create("heatmap.ppm").unwrap();
+    let cloned_buf = img.buf.clone();
+    let dyn_image = image::ImageRgb8(img.buf.clone());
+
     for act in activities {
         println!("Activity: {:?}", act.name);
 
@@ -169,11 +173,10 @@ fn main() {
                     pixel[0] + 5
                 };
 
-                *pixel = image::Rgba([c, c, c, 255]);
+                *pixel = image::Rgb([c, c, c]);
             }
         }
-    }
 
-    let fout = &mut File::create("heatmap.png").unwrap();
-    image::ImageRgba8(img.buf).save(fout, image::PNG).unwrap();
+        image::ImageRgb8(img.buf.clone()).save(fout, image::PPM).unwrap();
+    }
 }
