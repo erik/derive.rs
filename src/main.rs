@@ -7,6 +7,7 @@ extern crate geo;
 extern crate chrono;
 extern crate rayon;
 
+use std::error::Error;
 use std::fs;
 use std::fs::File;
 use std::io::{BufReader, Write};
@@ -63,7 +64,7 @@ impl Heatmap {
 
         println!("Computed height: {:?}", height);
 
-        let buffer = ImageBuffer::from_pixel(width, height, image::Rgb([255, 255, 255]));
+        let buffer = ImageBuffer::from_pixel(width, height, image::Rgb([0; 3]));
         let heatmap = image::ImageRgb8(buffer);
 
         Heatmap {
@@ -75,8 +76,8 @@ impl Heatmap {
         }
     }
 
-    pub fn save_frame<W: Write>(&self, writer: &mut W) {
-        self.heatmap.save(writer, image::PPM).unwrap();
+    pub fn save_frame<W: Write>(&self, writer: &mut W, fmt: image::ImageFormat) {
+        self.heatmap.save(writer, fmt).unwrap();
     }
 
     #[inline]
@@ -84,15 +85,18 @@ impl Heatmap {
         let image = self.heatmap.as_mut_rgb8().unwrap();
         let pixel = image.get_pixel_mut(point.0, point.1);
 
-        let c = if pixel[0] == 0 {
+        let c = if pixel[0] == 255 {
             pixel[0]
+        } else if pixel[0] == 0 {
+            25
         } else {
-            pixel[0] - 15
+            pixel[0] + 5
         };
 
         *pixel = image::Rgb([c; 3]);
     }
 
+    #[allow(dead_code)]
     pub fn decay(&mut self, amount: u8) {
         let image = self.heatmap.as_mut_rgb8().unwrap();
         for (_x, _y, pixel) in image.enumerate_pixels_mut() {
@@ -133,15 +137,17 @@ struct Activity {
     track_points: Vec<Point<f64>>,
 }
 
-fn parse_gpx(path: &path::PathBuf) -> Option<Activity> {
-    let file = File::open(path).unwrap();
+fn parse_gpx(path: &path::PathBuf) -> Result<Activity, Box<Error>> {
+    println!("Parsing {:?}", path);
+
+    let file = File::open(path)?;
     let reader = BufReader::new(file);
 
-    let gpx: Gpx = read(reader).unwrap();
+    let gpx: Gpx = read(reader)?;
 
     // Nothing to do if there are no tracks
     if gpx.tracks.len() == 0 {
-        return None;
+        return Err(Box::from("file has no tracks"));
     } else if gpx.tracks.len() > 1 {
         println!("Warning! more than 1 track, just taking first");
     }
@@ -167,9 +173,9 @@ fn parse_gpx(path: &path::PathBuf) -> Option<Activity> {
     }
 
     if activity.track_points.len() == 0 {
-        None
+        Err(Box::from("No track points"))
     } else {
-        Some(activity)
+        Ok(activity)
     }
 }
 
@@ -191,13 +197,14 @@ fn main() {
 
     let mut activities: Vec<Activity> = paths
         .into_par_iter()
-        .filter_map(|ref p| parse_gpx(p))
+        .filter_map(|ref p| parse_gpx(p).ok())
         .collect();
 
     activities.sort_by_key(|a| a.date);
 
-    let fout = &mut File::create("heatmap.ppm").unwrap();
-    let mut counter = 0;
+    // let ppm_file = &mut File::create("heatmap.ppm").unwrap();
+    let png_file = &mut File::create("heatmap.png").unwrap();
+    // let mut counter = 0;
 
     for act in activities {
         println!("Activity: {:?}", act.name);
@@ -209,15 +216,18 @@ fn main() {
 
         for ref point in pixels.into_iter() {
             map.add_point(point);
-            counter += 1;
 
-            if counter == 150 {
-                map.save_frame(fout);
-                counter = 0;
-            }
+            // counter += 1;
+            //
+            // if counter == 150 {
+            //     map.save_frame(ppm_file, image::PPM);
+            //     counter = 0;
+            // }
         }
 
         // FIXME: this is pretty ugly.
         // map.decay(1);
     }
+
+    map.save_frame(png_file, image::PNG);
 }
