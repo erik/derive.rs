@@ -14,6 +14,7 @@ gpx = "0.1.0"
 geo = "0.4.13"
 rayon = "0.9.0"
 chrono = "*"
+rand = "*"
 
 # TODO: Eventually, this is much faster than the xml-rs code gpx uses
 # quick-xml = "0.10.1"

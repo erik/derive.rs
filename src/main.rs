@@ -2,10 +2,12 @@
 extern crate serde_derive;
 extern crate docopt;
 extern crate image;
+extern crate imageproc;
 extern crate gpx;
 extern crate geo;
 extern crate chrono;
 extern crate rayon;
+extern crate rand;
 
 use std::error::Error;
 use std::fs;
@@ -50,7 +52,9 @@ struct Heatmap {
     bottom_right: Point<f64>,
     width: u32,
     height: u32,
-    heatmap: image::DynamicImage,
+    heatmap: Vec<u32>,
+    start: ScreenPoint,
+    max_value: u32,
 }
 
 impl Heatmap {
@@ -64,8 +68,12 @@ impl Heatmap {
 
         println!("Computed height: {:?}", height);
 
-        let buffer = ImageBuffer::from_pixel(width, height, image::Rgb([0; 3]));
-        let heatmap = image::ImageRgb8(buffer);
+        let size = (width * height) as usize;
+
+        let mut heatmap = Vec::with_capacity(size);
+        for _ in 0..size {
+            heatmap.push(0);
+        }
 
         Heatmap {
             top_left: Point::new(args.arg_left_lng, args.arg_top_lat),
@@ -73,37 +81,61 @@ impl Heatmap {
             width: width,
             height: height,
             heatmap: heatmap,
+            start: (0, 0),
+            max_value: 0,
         }
     }
 
+    pub fn as_image(&self) -> image::DynamicImage {
+        let color_map = self.heatmap
+            .clone()
+            .into_par_iter()
+            .map(|px| ((px % 255) as u8, 0, 0))
+            .collect::<Vec<_>>();
+
+        let size = (self.width * self.height * 3) as usize;
+        let mut pixels = Vec::with_capacity(size);
+
+        for pxl in color_map.iter() {
+            pixels.extend_from_slice(&[pxl.0, pxl.1, pxl.2]);
+        }
+
+        let buffer = ImageBuffer::from_raw(self.width, self.height, pixels).unwrap();
+        image::ImageRgb8(buffer)
+    }
+
     pub fn save_frame<W: Write>(&self, writer: &mut W, fmt: image::ImageFormat) {
-        self.heatmap.save(writer, fmt).unwrap();
+        let image = self.as_image();
+        image.save(writer, fmt).unwrap();
+    }
+
+    #[inline]
+    fn get_pixel_mut(&mut self, point: &ScreenPoint) -> Option<&mut u32> {
+        if point.0 >= self.width || point.1 >= self.height {
+            return None;
+        }
+
+        let index = (point.0 + (point.1 * self.width)) as usize;
+        Some(&mut self.heatmap[index])
     }
 
     #[inline]
     pub fn add_point(&mut self, point: &ScreenPoint) {
-        let image = self.heatmap.as_mut_rgb8().unwrap();
-        let pixel = image.get_pixel_mut(point.0, point.1);
 
-        let c = if pixel[0] == 255 {
-            pixel[0]
-        } else if pixel[0] == 0 {
-            25
-        } else {
-            pixel[0] + 5
+        // Lol rust?
+        let px = {
+            let px = self.get_pixel_mut(point).unwrap();
+            // TODO: Logarithmic growth
+            *px += 1;
+            *px
         };
 
-        *pixel = image::Rgb([c; 3]);
+        self.max_value = self.max_value.max(px);
     }
 
     #[allow(dead_code)]
     pub fn decay(&mut self, amount: u8) {
-        let image = self.heatmap.as_mut_rgb8().unwrap();
-        for (_x, _y, pixel) in image.enumerate_pixels_mut() {
-            if pixel[0] < 255 - amount {
-                *pixel = image::Rgb([pixel[0]; 3]);
-            }
-        }
+        self.heatmap.par_iter_mut().for_each(|px| { *px -= 1; });
     }
 
     // Using simple equirectangular projection for now. Returns None if point
@@ -204,7 +236,7 @@ fn main() {
 
     // let ppm_file = &mut File::create("heatmap.ppm").unwrap();
     let png_file = &mut File::create("heatmap.png").unwrap();
-    // let mut counter = 0;
+    let mut counter = 0;
 
     for act in activities {
         println!("Activity: {:?}", act.name);
@@ -214,14 +246,16 @@ fn main() {
             .filter_map(|ref pt| map.project_to_screen(pt))
             .collect();
 
+        // counter = 0;
         for ref point in pixels.into_iter() {
+            map.start = point.clone();
+
             map.add_point(point);
 
-            // counter += 1;
-            //
-            // if counter == 150 {
+            counter += 1;
+
+            // if counter % (3 * 150) == 0 {
             //     map.save_frame(ppm_file, image::PPM);
-            //     counter = 0;
             // }
         }
 
