@@ -90,7 +90,15 @@ impl Heatmap {
         let color_map = self.heatmap
             .clone()
             .into_par_iter()
-            .map(|px| ((px % 255) as u8, 0, 0))
+            .map(|count| {
+                if count == 0 {
+                    return (0, 0, 0);
+                }
+
+                let heat = (count as f64).log(self.max_value as f64) * 255.0;
+                let heat = heat.max(75.0) as u8;
+                (heat, heat / 4, heat / 2)
+            })
             .collect::<Vec<_>>();
 
         let size = (self.width * self.height * 3) as usize;
@@ -122,10 +130,9 @@ impl Heatmap {
     #[inline]
     pub fn add_point(&mut self, point: &ScreenPoint) {
 
-        // Lol rust?
+        // FIXME: lol rust?
         let px = {
             let px = self.get_pixel_mut(point).unwrap();
-            // TODO: Logarithmic growth
             *px += 1;
             *px
         };
@@ -134,8 +141,12 @@ impl Heatmap {
     }
 
     #[allow(dead_code)]
-    pub fn decay(&mut self, amount: u8) {
-        self.heatmap.par_iter_mut().for_each(|px| { *px -= 1; });
+    pub fn decay(&mut self, amount: u32) {
+        self.heatmap.par_iter_mut().for_each(|px| if *px > amount {
+            *px -= amount;
+        } else {
+            *px = 0;
+        });
     }
 
     // Using simple equirectangular projection for now. Returns None if point
@@ -234,9 +245,9 @@ fn main() {
 
     activities.sort_by_key(|a| a.date);
 
-    // let ppm_file = &mut File::create("heatmap.ppm").unwrap();
+    let ppm_file = &mut File::create("heatmap.ppm").unwrap();
     let png_file = &mut File::create("heatmap.png").unwrap();
-    let mut counter = 0;
+    let mut counter;
 
     for act in activities {
         println!("Activity: {:?}", act.name);
@@ -246,7 +257,7 @@ fn main() {
             .filter_map(|ref pt| map.project_to_screen(pt))
             .collect();
 
-        // counter = 0;
+        counter = 0;
         for ref point in pixels.into_iter() {
             map.start = point.clone();
 
@@ -254,9 +265,9 @@ fn main() {
 
             counter += 1;
 
-            // if counter % (3 * 150) == 0 {
-            //     map.save_frame(ppm_file, image::PPM);
-            // }
+            if counter % (5 * 150) == 0 {
+                map.save_frame(ppm_file, image::ImageFormat::PNM);
+            }
         }
 
         // FIXME: this is pretty ugly.
