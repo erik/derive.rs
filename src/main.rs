@@ -253,7 +253,7 @@ fn main() {
         println!("Activity: {:?}", act.name);
 
         let pixels: Vec<ScreenPoint> = act.track_points
-            .into_iter()
+            .par_iter()
             .filter_map(|ref pt| map.project_to_screen(pt))
             .collect();
 
