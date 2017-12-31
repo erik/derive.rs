@@ -266,7 +266,7 @@ fn main() {
             counter += 1;
 
             if counter % (5 * 150) == 0 {
-                map.save_frame(ppm_file, image::ImageFormat::PNM);
+                map.save_frame(ppm_file, image::PPM);
             }
         }
 
