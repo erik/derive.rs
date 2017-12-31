@@ -1,13 +1,15 @@
-#[macro_use]
-extern crate serde_derive;
+extern crate chrono;
 extern crate docopt;
+extern crate geo;
+extern crate gpx;
 extern crate image;
 extern crate imageproc;
-extern crate gpx;
-extern crate geo;
-extern crate chrono;
+#[macro_use]
+extern crate lazy_static;
+extern crate palette;
 extern crate rayon;
-extern crate rand;
+#[macro_use]
+extern crate serde_derive;
 
 use std::error::Error;
 use std::fs;
@@ -19,6 +21,7 @@ use docopt::Docopt;
 use gpx::read;
 use gpx::{Gpx, Track};
 use geo::Point;
+use palette::{Gradient, Rgb};
 use image::ImageBuffer;
 use rayon::prelude::*;
 
@@ -46,6 +49,18 @@ struct CommandArgs {
 
 
 type ScreenPoint = (u32, u32);
+
+
+lazy_static!{
+    static ref GRADIENT: Gradient<Rgb<f64>> = {
+        let stops = vec![
+            (255, 0, 0),
+            (0, 0, 255)
+        ].into_iter().map(|p| Rgb::new_u8(p.0, p.1, p.2));
+
+        Gradient::new(stops)
+    };
+}
 
 struct Heatmap {
     top_left: Point<f64>,
@@ -87,6 +102,7 @@ impl Heatmap {
     }
 
     pub fn as_image(&self) -> image::DynamicImage {
+
         let color_map = self.heatmap
             .clone()
             .into_par_iter()
@@ -95,9 +111,9 @@ impl Heatmap {
                     return (0, 0, 0);
                 }
 
-                let heat = (count as f64).log(self.max_value as f64) * 255.0;
-                let heat = heat.max(75.0) as u8;
-                (heat, heat / 4, heat / 2)
+                let heat = (count as f64).log(self.max_value as f64);
+
+                GRADIENT.get(heat).to_pixel()
             })
             .collect::<Vec<_>>();
 
@@ -181,8 +197,6 @@ struct Activity {
 }
 
 fn parse_gpx(path: &path::PathBuf) -> Result<Activity, Box<Error>> {
-    println!("Parsing {:?}", path);
-
     let file = File::open(path)?;
     let reader = BufReader::new(file);
 
@@ -238,12 +252,16 @@ fn main() {
         .map(|p| p.unwrap().path())
         .collect();
 
+    print!("Parsing {:?} GPX files...", paths.len());
+
     let mut activities: Vec<Activity> = paths
         .into_par_iter()
         .filter_map(|ref p| parse_gpx(p).ok())
         .collect();
 
     activities.sort_by_key(|a| a.date);
+
+    println!("Done!");
 
     let ppm_file = &mut File::create("heatmap.ppm").unwrap();
     let png_file = &mut File::create("heatmap.png").unwrap();

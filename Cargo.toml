@@ -15,6 +15,8 @@ geo = "0.4.13"
 rayon = "0.9.0"
 chrono = "*"
 rand = "*"
+palette = "*"
+lazy_static = "1.0"
 
 # TODO: Eventually, this is much faster than the xml-rs code gpx uses
 # quick-xml = "0.10.1"
