@@ -8,6 +8,7 @@ extern crate imageproc;
 extern crate lazy_static;
 extern crate palette;
 extern crate rayon;
+extern crate rusttype;
 #[macro_use]
 extern crate serde_derive;
 
@@ -24,6 +25,7 @@ use geo::Point;
 use palette::{Gradient, Rgb};
 use image::ImageBuffer;
 use rayon::prelude::*;
+use rusttype::{FontCollection,Font, Scale, point, PositionedGlyph};
 
 
 const USAGE: &'static str = "
@@ -54,11 +56,18 @@ type ScreenPoint = (u32, u32);
 lazy_static!{
     static ref GRADIENT: Gradient<Rgb<f64>> = {
         let stops = vec![
-            (255, 0, 0),
-            (0, 0, 255)
+            (0, 0, 0),
+            // (255, 69, 56),
         ].into_iter().map(|p| Rgb::new_u8(p.0, p.1, p.2));
 
         Gradient::new(stops)
+    };
+
+    static ref FONT_FACE: Font<'static> = {
+        let font_data = include_bytes!("../fonts/Roboto-Light.ttf");
+        let collection = FontCollection::from_bytes(font_data as &[u8]);
+
+        collection.into_font().unwrap()
     };
 }
 
@@ -71,6 +80,7 @@ struct Heatmap {
     start: ScreenPoint,
     max_value: u32,
 }
+
 
 impl Heatmap {
     pub fn from(args: &CommandArgs) -> Heatmap {
@@ -101,14 +111,13 @@ impl Heatmap {
         }
     }
 
-    pub fn as_image(&self) -> image::DynamicImage {
-
-        let color_map = self.heatmap
+    pub fn as_image(&self, text: &str) -> image::DynamicImage {
+        let mut color_map = self.heatmap
             .clone()
             .into_par_iter()
             .map(|count| {
                 if count == 0 {
-                    return (0, 0, 0);
+                    return (255, 255, 255);
                 }
 
                 let heat = (count as f64).log(self.max_value as f64);
@@ -120,6 +129,8 @@ impl Heatmap {
         let size = (self.width * self.height * 3) as usize;
         let mut pixels = Vec::with_capacity(size);
 
+        self.render_text_to_image(text, &mut color_map);
+
         for pxl in color_map.iter() {
             pixels.extend_from_slice(&[pxl.0, pxl.1, pxl.2]);
         }
@@ -128,8 +139,37 @@ impl Heatmap {
         image::ImageRgb8(buffer)
     }
 
-    pub fn save_frame<W: Write>(&self, writer: &mut W, fmt: image::ImageFormat) {
-        let image = self.as_image();
+    pub fn render_text_to_image(&self, text: &str, pixels: &mut Vec<(u8, u8, u8)>) {
+        let scale = Scale::uniform(self.height as f32 / 20.0);
+        let v_metrics = FONT_FACE.v_metrics(scale);
+
+        let width = self.width as i32;
+        let height = self.height as i32;
+
+        let offset = rusttype::point(0.0, height as f32 - v_metrics.ascent);
+        let glyphs: Vec<PositionedGlyph> = FONT_FACE.layout(text, scale, offset).collect();
+
+        for g in glyphs {
+            if let Some(bb) = g.pixel_bounding_box() {
+                g.draw(|gx, gy, gv| {
+                    let gx = gx as i32 + bb.min.x;
+                    let gy = gy as i32 + bb.min.y;
+
+                    let image_x = gx as i32;
+                    let image_y = gy as i32;
+
+                    if image_x >= 0 && image_x < width && image_y >= 0 && image_y < height {
+                        let index = (image_x + (image_y * width)) as usize;
+                        let color = 255 - (gv * 255.0) as u8;
+                        pixels[index] = (color, color, color);
+                    }
+                })
+            }
+        }
+    }
+
+    pub fn save_frame<W: Write>(&self, writer: &mut W, fmt: image::ImageFormat, text: &str) {
+        let image = self.as_image(text);
         image.save(writer, fmt).unwrap();
     }
 
@@ -158,10 +198,10 @@ impl Heatmap {
 
     #[allow(dead_code)]
     pub fn decay(&mut self, amount: u32) {
+        self.max_value -= 1;
+
         self.heatmap.par_iter_mut().for_each(|px| if *px > amount {
             *px -= amount;
-        } else {
-            *px = 0;
         });
     }
 
@@ -268,7 +308,7 @@ fn main() {
     let mut counter;
 
     for act in activities {
-        println!("Activity: {:?}", act.name);
+        println!("Activity: {}", act.name);
 
         let pixels: Vec<ScreenPoint> = act.track_points
             .par_iter()
@@ -277,14 +317,13 @@ fn main() {
 
         counter = 0;
         for ref point in pixels.into_iter() {
-            map.start = point.clone();
-
+            // map.start = point.clone();
             map.add_point(point);
 
             counter += 1;
 
             if counter % (5 * 150) == 0 {
-                map.save_frame(ppm_file, image::PPM);
+                map.save_frame(ppm_file, image::PPM, act.name.as_str());
             }
         }
 
@@ -292,5 +331,6 @@ fn main() {
         // map.decay(1);
     }
 
-    map.save_frame(png_file, image::PNG);
+    map.save_frame(ppm_file, image::PPM, "");
+    map.save_frame(png_file, image::PNG, "");
 }
