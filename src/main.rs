@@ -64,7 +64,7 @@ lazy_static!{
         Gradient::new(stops)
     };
 
-    static ref FONT_FACE: Font<'static> = {
+    static ref FONT: Font<'static> = {
         let font_data = include_bytes!("../fonts/Roboto-Light.ttf");
         let collection = FontCollection::from_bytes(font_data as &[u8]);
 
@@ -145,10 +145,10 @@ impl Heatmap {
         let x_offset = 20;
         let y_offset = self.height - scale.y as u32;
 
-        let date_string = activity.date.format("%Y/%m/%d").to_string();
-        let text = format!("{0}: {1}", date_string, activity.name);
+        let date_string = activity.date.format("%B %d, %Y").to_string();
+        let text = format!("{}", date_string);
 
-        draw_text_mut(&mut image, black, x_offset, y_offset, scale, &FONT_FACE, text.as_str());
+        draw_text_mut(&mut image, black, x_offset, y_offset, scale, &FONT, text.as_str());
 
         image
     }
