@@ -15,7 +15,7 @@ extern crate serde_derive;
 use std::error::Error;
 use std::fs;
 use std::fs::File;
-use std::io::{BufReader, Write};
+use std::io::BufReader;
 use std::path;
 
 use docopt::Docopt;
@@ -24,8 +24,9 @@ use gpx::{Gpx, Track};
 use geo::Point;
 use palette::{Gradient, Rgb};
 use image::ImageBuffer;
+use imageproc::drawing::draw_text_mut;
 use rayon::prelude::*;
-use rusttype::{FontCollection,Font, Scale, point, PositionedGlyph};
+use rusttype::{FontCollection, Font, Scale};
 
 
 const USAGE: &'static str = "
@@ -77,7 +78,6 @@ struct Heatmap {
     width: u32,
     height: u32,
     heatmap: Vec<u32>,
-    start: ScreenPoint,
     max_value: u32,
 }
 
@@ -106,13 +106,12 @@ impl Heatmap {
             width: width,
             height: height,
             heatmap: heatmap,
-            start: (0, 0),
             max_value: 0,
         }
     }
 
-    pub fn as_image(&self, text: &str) -> image::DynamicImage {
-        let mut color_map = self.heatmap
+    pub fn as_image(&self) -> image::DynamicImage {
+        let color_map = self.heatmap
             .clone()
             .into_par_iter()
             .map(|count| {
@@ -129,8 +128,6 @@ impl Heatmap {
         let size = (self.width * self.height * 3) as usize;
         let mut pixels = Vec::with_capacity(size);
 
-        self.render_text_to_image(text, &mut color_map);
-
         for pxl in color_map.iter() {
             pixels.extend_from_slice(&[pxl.0, pxl.1, pxl.2]);
         }
@@ -139,38 +136,21 @@ impl Heatmap {
         image::ImageRgb8(buffer)
     }
 
-    pub fn render_text_to_image(&self, text: &str, pixels: &mut Vec<(u8, u8, u8)>) {
-        let scale = Scale::uniform(self.height as f32 / 20.0);
-        let v_metrics = FONT_FACE.v_metrics(scale);
+    pub fn as_image_with_overlay(&self, activity: &Activity) -> image::DynamicImage {
+        let mut image = self.as_image();
 
-        let width = self.width as i32;
-        let height = self.height as i32;
+        let black = image::Rgba([0, 0, 0, 255]);
+        let scale = Scale::uniform(self.height as f32 / 15.0);
 
-        let offset = rusttype::point(0.0, height as f32 - v_metrics.ascent);
-        let glyphs: Vec<PositionedGlyph> = FONT_FACE.layout(text, scale, offset).collect();
+        let x_offset = 20;
+        let y_offset = self.height - scale.y as u32;
 
-        for g in glyphs {
-            if let Some(bb) = g.pixel_bounding_box() {
-                g.draw(|gx, gy, gv| {
-                    let gx = gx as i32 + bb.min.x;
-                    let gy = gy as i32 + bb.min.y;
+        let date_string = activity.date.format("%Y/%m/%d").to_string();
+        let text = format!("{0}: {1}", date_string, activity.name);
 
-                    let image_x = gx as i32;
-                    let image_y = gy as i32;
+        draw_text_mut(&mut image, black, x_offset, y_offset, scale, &FONT_FACE, text.as_str());
 
-                    if image_x >= 0 && image_x < width && image_y >= 0 && image_y < height {
-                        let index = (image_x + (image_y * width)) as usize;
-                        let color = 255 - (gv * 255.0) as u8;
-                        pixels[index] = (color, color, color);
-                    }
-                })
-            }
-        }
-    }
-
-    pub fn save_frame<W: Write>(&self, writer: &mut W, fmt: image::ImageFormat, text: &str) {
-        let image = self.as_image(text);
-        image.save(writer, fmt).unwrap();
+        image
     }
 
     #[inline]
@@ -305,8 +285,8 @@ fn main() {
 
     let ppm_file = &mut File::create("heatmap.ppm").unwrap();
     let png_file = &mut File::create("heatmap.png").unwrap();
-    let mut counter;
 
+    let mut counter;
     for act in activities {
         println!("Activity: {}", act.name);
 
@@ -317,13 +297,13 @@ fn main() {
 
         counter = 0;
         for ref point in pixels.into_iter() {
-            // map.start = point.clone();
             map.add_point(point);
 
             counter += 1;
 
             if counter % (5 * 150) == 0 {
-                map.save_frame(ppm_file, image::PPM, act.name.as_str());
+                let image = map.as_image_with_overlay(&act);
+                image.save(ppm_file, image::PPM).unwrap();
             }
         }
 
@@ -331,6 +311,6 @@ fn main() {
         // map.decay(1);
     }
 
-    map.save_frame(ppm_file, image::PPM, "");
-    map.save_frame(png_file, image::PNG, "");
+    map.as_image().save(ppm_file, image::PPM).unwrap();
+    map.as_image().save(png_file, image::PNG).unwrap();
 }
