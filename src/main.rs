@@ -22,7 +22,7 @@ use docopt::Docopt;
 use gpx::read;
 use gpx::{Gpx, Track};
 use geo::Point;
-use palette::{Gradient, Rgb};
+use palette::{Gradient, Rgba};
 use image::ImageBuffer;
 use imageproc::drawing::draw_text_mut;
 use rayon::prelude::*;
@@ -33,21 +33,28 @@ const USAGE: &'static str = "
 Generate video from GPX files.
 
 Usage:
-  derivers [options] <top-lat> <left-lng> <bottom-lat> <right-lng> <width> <height> <directory>
+  derivers -b BOUNDS [options] <directory>
+
+Arguments:
+  bounds       Boundaries of view port in form 'top-lat left-lng bottom-lat right-lng'
 
 Options:
+  -b, --bounds=BOUNDS    Boundaries of view port in form 'top-lat left-lng bottom-lat right-lng'
+  -w, --width=WIDTH      Width of output, in pixels [default: 1920]
+  --height=HEIGHT        Force height of output to pixel size (automatically calculated by default)
+  --ppm-stream=FILE      Output a PPM stream to named file (this will be quite large, use a FIFO!)
+  -o, --output=FILE      Output a PNG of cumulative heatmap data to file. [default: heatmap.png]
 ";
 
 
 #[derive(Debug, Deserialize)]
 struct CommandArgs {
-    arg_top_lat: f64,
-    arg_left_lng: f64,
-    arg_bottom_lat: f64,
-    arg_right_lng: f64,
-    arg_width: u32,
-    arg_height: u32,
     arg_directory: String,
+    flag_bounds: String,
+    flag_width: u32,
+    flag_height: Option<u32>,
+    flag_output: String,
+    flag_ppm_stream: Option<String>,
 }
 
 
@@ -55,11 +62,11 @@ type ScreenPoint = (u32, u32);
 
 
 lazy_static!{
-    static ref GRADIENT: Gradient<Rgb<f64>> = {
+    static ref GRADIENT: Gradient<Rgba<f64>> = {
         let stops = vec![
-            (0, 0, 0),
-            // (255, 69, 56),
-        ].into_iter().map(|p| Rgb::new_u8(p.0, p.1, p.2));
+            (0, 0, 0, 0),
+            (0xcc, 0xcc, 0xcc, 100),
+        ].into_iter().map(|p| Rgba::new_u8(p.0, p.1, p.2, p.3));
 
         Gradient::new(stops)
     };
@@ -84,14 +91,26 @@ struct Heatmap {
 
 impl Heatmap {
     pub fn from(args: &CommandArgs) -> Heatmap {
+        let split_bounds = args.flag_bounds
+            .as_str()
+            .split(' ')
+            .map(|b| b.parse().unwrap())
+            .collect::<Vec<f64>>();
+
+        if split_bounds.len() != 4 {
+            panic!("Wrong format for boundaries!");
+        }
+
+        let top_left = Point::new(split_bounds[1], split_bounds[0]);
+        let bot_right = Point::new(split_bounds[3], split_bounds[2]);
+
         // h == w * (top - bottom) / (right - left)
-        let ratio = (args.arg_top_lat - args.arg_bottom_lat) /
-            (args.arg_right_lng - args.arg_left_lng);
+        let ratio = (top_left.lat() - bot_right.lat()) / (bot_right.lng() - top_left.lng());
 
-        let width = args.arg_width as u32;
-        let height = ((args.arg_width as f64) * ratio) as u32;
+        let width = args.flag_width;
+        let computed_height = (width as f64 * ratio) as u32;
 
-        println!("Computed height: {:?}", height);
+        let height = args.flag_height.unwrap_or(computed_height);
 
         let size = (width * height) as usize;
 
@@ -101,8 +120,8 @@ impl Heatmap {
         }
 
         Heatmap {
-            top_left: Point::new(args.arg_left_lng, args.arg_top_lat),
-            bottom_right: Point::new(args.arg_right_lng, args.arg_bottom_lat),
+            top_left: top_left,
+            bottom_right: bot_right,
             width: width,
             height: height,
             heatmap: heatmap,
@@ -119,7 +138,7 @@ impl Heatmap {
                     return (255, 255, 255);
                 }
 
-                let heat = (count as f64).log(self.max_value as f64);
+                let heat = (count as f64).log(self.max_value as f64 * 0.80);
 
                 GRADIENT.get(heat).to_pixel()
             })
@@ -142,13 +161,13 @@ impl Heatmap {
         let black = image::Rgba([0, 0, 0, 255]);
         let scale = Scale::uniform(self.height as f32 / 15.0);
 
-        let x_offset = 20;
-        let y_offset = self.height - scale.y as u32;
+        let x = 20;
+        let y = self.height - scale.y as u32;
 
         let date_string = activity.date.format("%B %d, %Y").to_string();
         let text = format!("{}", date_string);
 
-        draw_text_mut(&mut image, black, x_offset, y_offset, scale, &FONT, text.as_str());
+        draw_text_mut(&mut image, black, x, y, scale, &FONT, text.as_str());
 
         image
     }
@@ -265,12 +284,15 @@ fn main() {
     println!("{:?}", args);
 
     let mut map = Heatmap::from(&args);
+    let output_dir = match fs::read_dir(args.arg_directory) {
+        Ok(dir) => dir,
+        Err(err) => {
+            println!("Error reading input directory: {}", err);
+            std::process::exit(1);
+        }
+    };
 
-    let paths: Vec<path::PathBuf> = fs::read_dir(args.arg_directory)
-        .unwrap()
-        .into_iter()
-        .map(|p| p.unwrap().path())
-        .collect();
+    let paths: Vec<path::PathBuf> = output_dir.into_iter().map(|p| p.unwrap().path()).collect();
 
     print!("Parsing {:?} GPX files...", paths.len());
 
