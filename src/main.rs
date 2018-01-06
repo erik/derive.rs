@@ -26,8 +26,7 @@ use palette::{Gradient, Rgba};
 use image::ImageBuffer;
 use imageproc::drawing::draw_text_mut;
 use rayon::prelude::*;
-use rusttype::{FontCollection, Font, Scale};
-
+use rusttype::{Font, FontCollection, Scale};
 
 const USAGE: &'static str = "
 Generate video from GPX files.
@@ -46,7 +45,6 @@ Options:
   -o, --output=FILE      Output a PNG of cumulative heatmap data to file. [default: heatmap.png]
 ";
 
-
 #[derive(Debug, Deserialize)]
 struct CommandArgs {
     arg_directory: String,
@@ -57,9 +55,7 @@ struct CommandArgs {
     flag_ppm_stream: Option<String>,
 }
 
-
 type ScreenPoint = (u32, u32);
-
 
 lazy_static!{
     static ref GRADIENT: Gradient<Rgba<f64>> = {
@@ -87,7 +83,6 @@ struct Heatmap {
     heatmap: Vec<u32>,
     max_value: u32,
 }
-
 
 impl Heatmap {
     pub fn from(args: &CommandArgs) -> Heatmap {
@@ -184,7 +179,6 @@ impl Heatmap {
 
     #[inline]
     pub fn add_point(&mut self, point: &ScreenPoint) {
-
         // FIXME: lol rust?
         let px = {
             let px = self.get_pixel_mut(point).unwrap();
@@ -199,8 +193,10 @@ impl Heatmap {
     pub fn decay(&mut self, amount: u32) {
         self.max_value -= 1;
 
-        self.heatmap.par_iter_mut().for_each(|px| if *px > amount {
-            *px -= amount;
+        self.heatmap.par_iter_mut().for_each(|px| {
+            if *px > amount {
+                *px -= amount;
+            }
         });
     }
 
@@ -226,7 +222,6 @@ impl Heatmap {
         }
     }
 }
-
 
 #[derive(Debug)]
 struct Activity {
@@ -274,7 +269,6 @@ fn parse_gpx(path: &path::PathBuf) -> Result<Activity, Box<Error>> {
         Ok(activity)
     }
 }
-
 
 fn main() {
     let args: CommandArgs = Docopt::new(USAGE)
