@@ -33,14 +33,17 @@ Generate video from GPX files.
 
 Usage:
   derivers -b BOUNDS [options] <directory>
+  derivers (-h|--help)
 
 Arguments:
   bounds       Boundaries of view port in form 'top-lat left-lng bottom-lat right-lng'
 
 Options:
+  -h, --help             Show this help text.
   -b, --bounds=BOUNDS    Boundaries of view port in form 'top-lat left-lng bottom-lat right-lng'
   -w, --width=WIDTH      Width of output, in pixels [default: 1920]
   --height=HEIGHT        Force height of output to pixel size (automatically calculated by default)
+  -r, --frame-rate=RATE  Output a frame every `RATE` GPS points [default: 1500]
   --ppm-stream=FILE      Output a PPM stream to named file (this will be quite large, use a FIFO!)
   -o, --output=FILE      Output a PNG of cumulative heatmap data to file. [default: heatmap.png]
 ";
@@ -49,10 +52,12 @@ Options:
 struct CommandArgs {
     arg_directory: String,
     flag_bounds: String,
-    flag_width: u32,
+    flag_frame_rate: u32,
     flag_height: Option<u32>,
+    flag_help: bool,
     flag_output: String,
     flag_ppm_stream: Option<String>,
+    flag_width: u32,
 }
 
 type ScreenPoint = (u32, u32);
@@ -275,7 +280,10 @@ fn main() {
         .and_then(|d| d.deserialize())
         .unwrap_or_else(|e| e.exit());
 
-    println!("{:?}", args);
+    if args.flag_help {
+        println!("{}", USAGE);
+        return;
+    }
 
     let mut map = Heatmap::from(&args);
     let output_dir = match fs::read_dir(args.arg_directory) {
@@ -299,8 +307,8 @@ fn main() {
 
     println!("Done!");
 
-    let ppm_file = &mut File::create("heatmap.ppm").unwrap();
-    let png_file = &mut File::create("heatmap.png").unwrap();
+    let png_file = &mut File::create(args.flag_output).unwrap();
+    let mut ppm_file = args.flag_ppm_stream.map(|name| File::create(name).unwrap());
 
     let mut counter;
     for act in activities {
@@ -317,9 +325,11 @@ fn main() {
 
             counter += 1;
 
-            if counter % (5 * 150) == 0 {
-                let image = map.as_image_with_overlay(&act);
-                image.save(ppm_file, image::PPM).unwrap();
+            if counter % args.flag_frame_rate == 0 {
+                if let Some(ref mut file) = ppm_file {
+                    let image = map.as_image_with_overlay(&act);
+                    image.save(file, image::PPM).unwrap();
+                }
             }
         }
 
@@ -327,6 +337,9 @@ fn main() {
         // map.decay(1);
     }
 
-    map.as_image().save(ppm_file, image::PPM).unwrap();
+    if let Some(ref mut file) = ppm_file {
+        map.as_image().save(file, image::PPM).unwrap();
+    };
+
     map.as_image().save(png_file, image::PNG).unwrap();
 }
