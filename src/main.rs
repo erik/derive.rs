@@ -22,7 +22,7 @@ use docopt::Docopt;
 use gpx::read;
 use gpx::{Gpx, Track};
 use geo::Point;
-use palette::{Gradient, Rgba};
+use palette::{Gradient, Hsv, IntoColor, RgbHue};
 use image::ImageBuffer;
 use imageproc::drawing::draw_text_mut;
 use rayon::prelude::*;
@@ -42,6 +42,7 @@ Options:
   -h, --help             Show this help text.
   -b, --bounds=BOUNDS    Boundaries of view port in form 'top-lat left-lng bottom-lat right-lng'
   -w, --width=WIDTH      Width of output, in pixels [default: 1920]
+
   --height=HEIGHT        Force height of output to pixel size (automatically calculated by default)
   -r, --frame-rate=RATE  Output a frame every `RATE` GPS points [default: 1500]
   --ppm-stream=FILE      Output a PPM stream to named file (this will be quite large, use a FIFO!)
@@ -63,11 +64,15 @@ struct CommandArgs {
 type ScreenPoint = (u32, u32);
 
 lazy_static!{
-    static ref GRADIENT: Gradient<Rgba<f64>> = {
+    static ref GRADIENT: Gradient<Hsv<f64>> = {
         let stops = vec![
-            (0, 0, 0, 0),
-            (0xcc, 0xcc, 0xcc, 100),
-        ].into_iter().map(|p| Rgba::new_u8(p.0, p.1, p.2, p.3));
+            (0.0, 0.75, 0.20),
+            (0.0, 0.75, 1.00),
+
+            // (0x22, 0x22, 0x22),
+            // (0xcc, 0xcc, 0xcc),
+            // (0xff, 0xff, 0xff),
+        ].into_iter().map(|p| Hsv::new(RgbHue::from(p.0), p.1, p.2));
 
         Gradient::new(stops)
     };
@@ -135,12 +140,12 @@ impl Heatmap {
             .into_par_iter()
             .map(|count| {
                 if count == 0 {
-                    return (255, 255, 255);
+                    return (0, 0, 0);
                 }
 
-                let heat = (count as f64).log(self.max_value as f64 * 0.80);
+                let heat = (count as f64).log(self.max_value as f64);
 
-                GRADIENT.get(heat).to_pixel()
+                GRADIENT.get(heat).into_rgb().to_pixel()
             })
             .collect::<Vec<_>>();
 
@@ -158,7 +163,7 @@ impl Heatmap {
     pub fn as_image_with_overlay(&self, activity: &Activity) -> image::DynamicImage {
         let mut image = self.as_image();
 
-        let black = image::Rgba([0, 0, 0, 255]);
+        let white = image::Rgba([255; 4]);
         let scale = Scale::uniform(self.height as f32 / 15.0);
 
         let x = 20;
@@ -167,7 +172,7 @@ impl Heatmap {
         let date_string = activity.date.format("%B %d, %Y").to_string();
         let text = format!("{}", date_string);
 
-        draw_text_mut(&mut image, black, x, y, scale, &FONT, text.as_str());
+        draw_text_mut(&mut image, white, x, y, scale, &FONT, text.as_str());
 
         image
     }
