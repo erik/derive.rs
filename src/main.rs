@@ -6,6 +6,7 @@ extern crate image;
 extern crate imageproc;
 #[macro_use]
 extern crate lazy_static;
+extern crate libc;
 extern crate palette;
 extern crate rayon;
 extern crate rusttype;
@@ -15,7 +16,7 @@ extern crate serde_derive;
 use std::error::Error;
 use std::fs;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{stdout, BufReader};
 use std::path;
 
 use docopt::Docopt;
@@ -45,7 +46,7 @@ Options:
 
   --height=HEIGHT        Force height of output to pixel size (automatically calculated by default)
   -r, --frame-rate=RATE  Output a frame every `RATE` GPS points [default: 1500]
-  --ppm-stream=FILE      Output a PPM stream to named file (this will be quite large, use a FIFO!)
+  -s, --ppm-stream       Output a PPM stream to stdout.
   -o, --output=FILE      Output a PNG of cumulative heatmap data to file. [default: heatmap.png]
 ";
 
@@ -57,7 +58,7 @@ struct CommandArgs {
     flag_height: Option<u32>,
     flag_help: bool,
     flag_output: String,
-    flag_ppm_stream: Option<String>,
+    flag_ppm_stream: bool,
     flag_width: u32,
 }
 
@@ -250,7 +251,7 @@ fn parse_gpx(path: &path::PathBuf) -> Result<Activity, Box<Error>> {
     if gpx.tracks.len() == 0 {
         return Err(Box::from("file has no tracks"));
     } else if gpx.tracks.len() > 1 {
-        println!("Warning! more than 1 track, just taking first");
+        eprintln!("Warning! more than 1 track, just taking first");
     }
 
     let track: &Track = &gpx.tracks[0];
@@ -286,22 +287,31 @@ fn main() {
         .unwrap_or_else(|e| e.exit());
 
     if args.flag_help {
-        println!("{}", USAGE);
+        eprintln!("{}", USAGE);
         return;
+    }
+
+    let is_tty = unsafe { libc::isatty(libc::STDOUT_FILENO as i32) } != 0;
+    if args.flag_ppm_stream && is_tty {
+        eprintln!(
+            "Refusing to write frame data to TTY.\n
+Please pipe output to a file or program."
+        );
+        std::process::exit(1);
     }
 
     let mut map = Heatmap::from(&args);
     let output_dir = match fs::read_dir(args.arg_directory) {
         Ok(dir) => dir,
         Err(err) => {
-            println!("Error reading input directory: {}", err);
+            eprintln!("Error reading input directory: {}", err);
             std::process::exit(1);
         }
     };
 
     let paths: Vec<path::PathBuf> = output_dir.into_iter().map(|p| p.unwrap().path()).collect();
 
-    print!("Parsing {:?} GPX files...", paths.len());
+    eprint!("Parsing {:?} GPX files...", paths.len());
 
     let mut activities: Vec<Activity> = paths
         .into_par_iter()
@@ -310,14 +320,14 @@ fn main() {
 
     activities.sort_by_key(|a| a.date);
 
-    println!("Done!");
+    eprintln!("Done!");
 
     let png_file = &mut File::create(args.flag_output).unwrap();
-    let mut ppm_file = args.flag_ppm_stream.map(|name| File::create(name).unwrap());
+    let mut stdout = stdout();
 
     let mut counter;
     for act in activities {
-        println!("Activity: {}", act.name);
+        eprintln!("Activity: {}", act.name);
 
         let pixels: Vec<ScreenPoint> = act.track_points
             .par_iter()
@@ -331,9 +341,9 @@ fn main() {
             counter += 1;
 
             if counter % args.flag_frame_rate == 0 {
-                if let Some(ref mut file) = ppm_file {
+                if args.flag_ppm_stream {
                     let image = map.as_image_with_overlay(&act);
-                    image.save(file, image::PPM).unwrap();
+                    image.save(&mut stdout, image::PPM).unwrap();
                 }
             }
         }
@@ -342,8 +352,8 @@ fn main() {
         // map.decay(1);
     }
 
-    if let Some(ref mut file) = ppm_file {
-        map.as_image().save(file, image::PPM).unwrap();
+    if args.flag_ppm_stream {
+        map.as_image().save(&mut stdout, image::PPM).unwrap();
     };
 
     map.as_image().save(png_file, image::PNG).unwrap();

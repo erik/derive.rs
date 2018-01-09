@@ -4,18 +4,19 @@ version = "0.1.0"
 authors = ["Erik Price <github@erikprice.net>"]
 
 [dependencies]
-serde = "1.0.24"
-serde_derive = "1.0.24"
+chrono = "*"
 docopt = "0.8.1"
+geo = "0.4.13"
+gpx = "0.1.0"
 image = "0.18.0"
 imageproc = "*"
-gpx = "0.1.0"
-geo = "0.4.13"
-rayon = "0.9.0"
-chrono = "*"
-rusttype = "0.2.1"
-palette = "*"
 lazy_static = "1.0"
+libc = "*"
+palette = "*"
+rayon = "0.9.0"
+rusttype = "0.2.1"
+serde = "1.0.24"
+serde_derive = "1.0.24"
 
 # TODO: Eventually, this is much faster than the xml-rs code gpx uses
 # quick-xml = "0.10.1"
