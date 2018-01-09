@@ -43,11 +43,14 @@ Options:
   -h, --help             Show this help text.
   -b, --bounds=BOUNDS    Boundaries of view port in form 'top-lat left-lng bottom-lat right-lng'
   -w, --width=WIDTH      Width of output, in pixels [default: 1920]
-
   --height=HEIGHT        Force height of output to pixel size (automatically calculated by default)
+  -o, --output=FILE      Output a PNG of cumulative heatmap data to file. [default: heatmap.png]
+
+Video options:
   -r, --frame-rate=RATE  Output a frame every `RATE` GPS points [default: 1500]
   -s, --ppm-stream       Output a PPM stream to stdout.
-  -o, --output=FILE      Output a PNG of cumulative heatmap data to file. [default: heatmap.png]
+  --title                Render activity title into each frame.
+  --date                 Render activity date into each frame.
 ";
 
 #[derive(Debug, Deserialize)]
@@ -59,6 +62,8 @@ struct CommandArgs {
     flag_help: bool,
     flag_output: String,
     flag_ppm_stream: bool,
+    flag_title: bool,
+    flag_date: bool,
     flag_width: u32,
 }
 
@@ -93,6 +98,8 @@ struct Heatmap {
     height: u32,
     heatmap: Vec<u32>,
     max_value: u32,
+    render_date: bool,
+    render_title: bool,
 }
 
 impl Heatmap {
@@ -132,6 +139,8 @@ impl Heatmap {
             height: height,
             heatmap: heatmap,
             max_value: 0,
+            render_date: args.flag_date,
+            render_title: args.flag_title,
         }
     }
 
@@ -161,19 +170,24 @@ impl Heatmap {
         image::ImageRgb8(buffer)
     }
 
-    pub fn as_image_with_overlay(&self, activity: &Activity) -> image::DynamicImage {
+    pub fn as_image_with_overlay(&self, act: &Activity) -> image::DynamicImage {
         let mut image = self.as_image();
 
         let white = image::Rgba([255; 4]);
         let scale = Scale::uniform(self.height as f32 / 15.0);
 
         let x = 20;
-        let y = self.height - scale.y as u32;
+        let mut y = self.height - scale.y as u32;
 
-        let date_string = activity.date.format("%B %d, %Y").to_string();
-        let text = format!("{}", date_string);
+        if self.render_date {
+            let date_string = act.date.format("%B %d, %Y").to_string();
+            draw_text_mut(&mut image, white, x, y, scale, &FONT, date_string.as_str());
+            y -= scale.y as u32;
+        }
 
-        draw_text_mut(&mut image, white, x, y, scale, &FONT, text.as_str());
+        if self.render_title {
+            draw_text_mut(&mut image, white, x, y, scale, &FONT, act.name.as_str());
+        }
 
         image
     }
